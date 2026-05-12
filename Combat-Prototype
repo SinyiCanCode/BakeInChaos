@@ -1,0 +1,468 @@
+<style>
+  .arena { position: relative; height: 320px; background: var(--color-background-secondary); border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-tertiary); overflow: hidden; margin-bottom: 12px; }
+  .ground { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: var(--color-background-tertiary); border-top: 0.5px solid var(--color-border-tertiary); }
+  .entity { position: absolute; bottom: 60px; transition: left 0.1s linear; }
+  .player { width: 32px; height: 56px; background: #378ADD; border-radius: 4px; }
+  .enemy { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .part { border-radius: 4px; transition: opacity 0.2s, transform 0.1s; cursor: pointer; position: relative; }
+  .part.dead { opacity: 0.15; pointer-events: none; }
+  .part.hit { transform: translateX(3px); }
+  .part-hp { position: absolute; left: -32px; top: 50%; transform: translateY(-50%); font-size: 10px; color: var(--color-text-secondary); white-space: nowrap; }
+  .part-weak { position: absolute; right: -18px; top: 50%; transform: translateY(-50%); font-size: 14px; }
+  .head { width: 28px; height: 22px; background: #993C1D; }
+  .wing { width: 44px; height: 14px; background: #BA7517; }
+  .body { width: 36px; height: 32px; background: #993C1D; }
+  .leg { width: 18px; height: 24px; background: #712B13; }
+  .ingredient { position: absolute; bottom: 64px; width: 14px; height: 14px; background: #97C459; border-radius: 50%; border: 1.5px solid #3B6D11; animation: bob 0.8s ease-in-out infinite alternate; cursor: pointer; }
+  @keyframes bob { from { transform: translateY(0); } to { transform: translateY(-4px); } }
+  .telegraph { position: absolute; bottom: 110px; width: 50px; height: 4px; background: var(--color-background-danger); border-radius: 2px; }
+  .attack-fx { position: absolute; bottom: 80px; width: 30px; height: 30px; border: 2px solid var(--color-text-danger); border-radius: 50%; opacity: 0; pointer-events: none; }
+  .attack-fx.active { animation: pop 0.3s ease-out forwards; }
+  @keyframes pop { 0% { opacity: 1; transform: scale(0.3); } 100% { opacity: 0; transform: scale(1.8); } }
+  .sphere-overlay { position: absolute; inset: 0; background: rgba(15, 110, 86, 0.08); backdrop-filter: blur(1px); display: none; flex-direction: column; align-items: center; justify-content: center; padding: 12px; }
+  .sphere-overlay.active { display: flex; }
+  .sphere-card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-lg); padding: 10px 14px; width: 92%; max-width: 360px; }
+  .sphere-title { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px; }
+  .part-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .part-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .part-row:hover:not(.disabled) { background: var(--color-background-secondary); }
+  .part-row.selected { background: var(--color-background-info); }
+  .part-row.disabled { opacity: 0.3; cursor: not-allowed; text-decoration: line-through; }
+  .part-row .hpbar { flex: 1; height: 5px; background: var(--color-background-tertiary); border-radius: 3px; overflow: hidden; }
+  .part-row .hpfill { height: 100%; background: var(--color-text-danger); transition: width 0.2s; }
+  .tech-row { display: flex; gap: 4px; margin-top: 6px; }
+  .tech-btn { flex: 1; padding: 5px; font-size: 11px; border: 0.5px solid var(--color-border-tertiary); background: var(--color-background-primary); border-radius: 6px; cursor: pointer; }
+  .tech-btn:hover { background: var(--color-background-secondary); }
+  .tech-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .chain-prompt { position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); width: 60px; height: 60px; display: none; align-items: center; justify-content: center; }
+  .chain-prompt.active { display: flex; }
+  .chain-ring { width: 60px; height: 60px; border: 3px solid var(--color-text-warning); border-radius: 50%; animation: shrink linear forwards; }
+  @keyframes shrink { from { transform: scale(1.5); opacity: 1; } to { transform: scale(0.7); opacity: 0.4; } }
+  .chain-target { position: absolute; width: 26px; height: 26px; border: 2px solid var(--color-text-success); border-radius: 50%; }
+  .chain-count { font-size: 11px; color: var(--color-text-warning); position: absolute; bottom: 195px; left: 50%; transform: translateX(-50%); font-weight: 500; }
+  .hud { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); margin-bottom: 12px; font-size: 12px; }
+  .hud-section { display: flex; gap: 14px; align-items: center; }
+  .hud-label { color: var(--color-text-secondary); margin-right: 4px; }
+  .hud-val { font-weight: 500; font-variant-numeric: tabular-nums; }
+  .controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .ctrl-btn { padding: 10px 8px; background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); cursor: pointer; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .ctrl-btn:hover { background: var(--color-background-secondary); }
+  .ctrl-btn.primary { border-color: var(--color-border-info); background: var(--color-background-info); color: var(--color-text-info); }
+  .ctrl-btn .key { font-size: 10px; color: var(--color-text-tertiary); font-family: var(--font-mono); }
+  .ctrl-btn.primary .key { color: var(--color-text-info); opacity: 0.7; }
+  .log { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 8px 12px; font-size: 12px; height: 70px; overflow-y: auto; font-family: var(--font-mono); line-height: 1.5; }
+  .log-entry { color: var(--color-text-secondary); }
+  .log-entry.crit { color: var(--color-text-warning); }
+  .log-entry.danger { color: var(--color-text-danger); }
+  .log-entry.success { color: var(--color-text-success); }
+  .banner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 16px 28px; background: var(--color-background-primary); border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-secondary); font-size: 16px; font-weight: 500; display: none; z-index: 10; }
+  .banner.active { display: block; }
+  .banner button { margin-top: 8px; display: block; width: 100%; padding: 6px 12px; font-size: 12px; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; margin-left: 4px; }
+  .tag-c { background: #FAEEDA; color: #633806; }
+  .tag-p { background: #E6F1FB; color: #0C447C; }
+  .tag-e { background: #FBEAF0; color: #72243E; }
+</style>
+
+<h2 class="sr-only">Protótipo jogável de combate ARPG culinário com sistema de targeting parte-por-parte e chain de timing</h2>
+
+<div class="hud">
+  <div class="hud-section">
+    <span><span class="hud-label">HP</span><span class="hud-val" id="player-hp">100</span></span>
+    <span><span class="hud-label">Ingredientes</span><span class="hud-val" id="ing-count">0</span></span>
+    <span><span class="hud-label">Saco de morte</span><span class="hud-val" id="ing-saved">0</span></span>
+  </div>
+  <div class="hud-section">
+    <span><span class="hud-label">Tempo</span><span class="hud-val" id="tempo-state">normal</span></span>
+  </div>
+</div>
+
+<div class="arena" id="arena">
+  <div class="ground"></div>
+  <div class="entity player" id="player" style="left: 60px;"></div>
+  <div class="entity enemy" id="enemy" style="left: 480px;">
+    <div class="part head" data-part="head"><span class="part-hp" id="hp-head">30</span><span class="part-weak">🔨</span></div>
+    <div class="part wing" data-part="wing"><span class="part-hp" id="hp-wing">25</span><span class="part-weak">🗡️</span></div>
+    <div class="part body" data-part="body"><span class="part-hp" id="hp-body">60</span><span class="part-weak">🎯</span></div>
+    <div style="display: flex; gap: 4px;">
+      <div class="part leg" data-part="leg-l"><span class="part-hp" id="hp-leg-l">20</span></div>
+      <div class="part leg" data-part="leg-r"><span class="part-hp" id="hp-leg-r">20</span></div>
+    </div>
+  </div>
+  <div class="attack-fx" id="atk-fx"></div>
+  <div class="telegraph" id="telegraph" style="display: none;"></div>
+  <div class="chain-prompt" id="chain-prompt">
+    <div class="chain-ring" id="chain-ring"></div>
+  </div>
+  <div class="chain-count" id="chain-count" style="display: none;">CHAIN ×1</div>
+  <div class="sphere-overlay" id="sphere">
+    <div class="sphere-card">
+      <div class="sphere-title">Esfera culinária — selecione parte e técnica</div>
+      <div class="part-list" id="sphere-parts"></div>
+      <div class="tech-row" id="sphere-techs">
+        <button class="tech-btn" data-tech="fatiar">Fatiar <span class="tag tag-c">cortar</span></button>
+        <button class="tech-btn" data-tech="estocar">Estocar <span class="tag tag-p">perfurar</span></button>
+        <button class="tech-btn" data-tech="esmagar">Esmagar <span class="tag tag-e">esmagar</span></button>
+      </div>
+      <div style="margin-top: 8px; font-size: 11px; color: var(--color-text-tertiary); text-align: center;">ESC pra fechar sem atacar</div>
+    </div>
+  </div>
+  <div class="banner" id="banner">
+    <div id="banner-text">Vitória!</div>
+    <button id="banner-btn" onclick="reset()">Jogar de novo</button>
+  </div>
+</div>
+
+<div class="controls">
+  <button class="ctrl-btn" onclick="movePlayer(-1)">← Andar<span class="key">A / ←</span></button>
+  <button class="ctrl-btn" onclick="movePlayer(1)">Andar →<span class="key">D / →</span></button>
+  <button class="ctrl-btn" onclick="quickAttack()">Ataque livre<span class="key">J</span></button>
+  <button class="ctrl-btn primary" onclick="openSphere()">Esfera culinária<span class="key">E ou ESPAÇO</span></button>
+</div>
+
+<div class="log" id="log"></div>
+
+<script>
+(function(){
+  const state = {
+    player: { x: 60, hp: 100, weapon: 'cutelo' },
+    enemy: { x: 480, dir: -1, attacking: false, telegraph: 0, atkCd: 0 },
+    parts: {
+      head: { hp: 30, max: 30, weak: 'esmagar', ing: 'crista', alive: true },
+      wing: { hp: 25, max: 25, weak: 'fatiar', ing: 'asa', alive: true },
+      body: { hp: 60, max: 60, weak: 'estocar', ing: 'peito', alive: true, core: true },
+      'leg-l': { hp: 20, max: 20, weak: null, ing: 'coxa-esq', alive: true },
+      'leg-r': { hp: 20, max: 20, weak: null, ing: 'coxa-dir', alive: true },
+    },
+    sphere: false,
+    selectedPart: null,
+    timeScale: 1,
+    ingredients: { onGround: [], collected: 0, banked: 0 },
+    chain: { active: false, count: 0, lastPart: null, lastTech: null, window: 0, maxWindow: 600 },
+    over: false,
+    invuln: 0,
+  };
+  window._gs = state;
+
+  const $ = id => document.getElementById(id);
+  const arena = $('arena');
+  const arenaW = 680 - 60;
+
+  function log(msg, cls){
+    const el = document.createElement('div');
+    el.className = 'log-entry ' + (cls||'');
+    el.textContent = msg;
+    $('log').prepend(el);
+    while($('log').children.length > 15) $('log').lastChild.remove();
+  }
+
+  function movePlayer(dir){
+    if(state.over) return;
+    if(state.sphere) return;
+    state.player.x = Math.max(20, Math.min(arenaW - 20, state.player.x + dir * 24));
+    $('player').style.left = state.player.x + 'px';
+    // pickup
+    state.ingredients.onGround = state.ingredients.onGround.filter(ing => {
+      if(Math.abs(ing.x - state.player.x) < 20){
+        state.ingredients.collected++;
+        log('+ ' + ing.name + ' coletado', 'success');
+        $('ing-count').textContent = state.ingredients.collected;
+        const el = document.querySelector('[data-ing="'+ing.id+'"]');
+        if(el) el.remove();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function aliveParts(){
+    return Object.entries(state.parts).filter(([_,p]) => p.alive);
+  }
+
+  function nearestPart(){
+    const ap = aliveParts();
+    if(!ap.length) return null;
+    return ap[Math.floor(Math.random() * ap.length)][0];
+  }
+
+  function quickAttack(){
+    if(state.over || state.sphere) return;
+    const dist = Math.abs(state.enemy.x - state.player.x);
+    if(dist > 70){
+      log('muito longe pra atacar livre', 'danger');
+      return;
+    }
+    const partKey = nearestPart();
+    if(!partKey) return;
+    const dmg = 8 + Math.floor(Math.random()*5);
+    hitPart(partKey, dmg, 'fatiar');
+    log('ataque livre → ' + partKey + ' (' + dmg + ')', '');
+    flashAtk();
+  }
+
+  function flashAtk(){
+    const fx = $('atk-fx');
+    fx.style.left = (state.enemy.x - 15) + 'px';
+    fx.classList.remove('active');
+    void fx.offsetWidth;
+    fx.classList.add('active');
+  }
+
+  function hitPart(key, dmg, tech){
+    const p = state.parts[key];
+    if(!p || !p.alive) return false;
+    const weakHit = p.weak === tech;
+    const final = weakHit ? Math.floor(dmg * 2) : dmg;
+    p.hp = Math.max(0, p.hp - final);
+    $('hp-'+key).textContent = p.hp;
+    const partEl = document.querySelector('[data-part="'+key+'"]');
+    if(partEl){
+      partEl.classList.add('hit');
+      setTimeout(() => partEl.classList.remove('hit'), 100);
+    }
+    if(weakHit) log('  ⚡ ponto fraco! ' + final + ' dano', 'crit');
+    if(p.hp <= 0){
+      p.alive = false;
+      if(partEl) partEl.classList.add('dead');
+      log('  ✓ ' + key + ' destruído → dropou ' + p.ing, 'success');
+      dropIngredient(p.ing, key);
+      if(p.core){
+        endGame(true);
+        return weakHit;
+      }
+    }
+    if(aliveParts().length === 0) endGame(true);
+    return weakHit;
+  }
+
+  function dropIngredient(name, key){
+    const id = 'ing-' + key;
+    const x = state.enemy.x + (Math.random()*40 - 20);
+    state.ingredients.onGround.push({ id, name, x });
+    const el = document.createElement('div');
+    el.className = 'ingredient';
+    el.dataset.ing = id;
+    el.style.left = x + 'px';
+    el.title = name;
+    arena.appendChild(el);
+  }
+
+  function openSphere(){
+    if(state.over || state.sphere) return;
+    state.sphere = true;
+    state.timeScale = 0.1;
+    $('tempo-state').textContent = 'lento ×0.1';
+    renderSphereParts();
+    $('sphere').classList.add('active');
+  }
+
+  function closeSphere(){
+    state.sphere = false;
+    state.timeScale = 1;
+    $('tempo-state').textContent = 'normal';
+    state.selectedPart = null;
+    $('sphere').classList.remove('active');
+  }
+
+  function renderSphereParts(){
+    const cont = $('sphere-parts');
+    cont.innerHTML = '';
+    Object.entries(state.parts).forEach(([key,p]) => {
+      const row = document.createElement('div');
+      row.className = 'part-row' + (p.alive ? '' : ' disabled') + (state.selectedPart === key ? ' selected' : '');
+      const weakIcon = p.weak === 'fatiar' ? '🗡️' : p.weak === 'estocar' ? '🎯' : p.weak === 'esmagar' ? '🔨' : '–';
+      row.innerHTML = `
+        <span style="width: 70px;">${key}${p.core?' ★':''}</span>
+        <div class="hpbar"><div class="hpfill" style="width:${(p.hp/p.max)*100}%"></div></div>
+        <span style="width: 30px; text-align: right;">${p.hp}</span>
+        <span style="width: 20px;">${weakIcon}</span>
+      `;
+      row.onclick = () => { if(p.alive){ state.selectedPart = key; renderSphereParts(); } };
+      cont.appendChild(row);
+    });
+  }
+
+  function executeTech(tech){
+    if(!state.selectedPart){
+      log('selecione uma parte primeiro', 'danger');
+      return;
+    }
+    const dmg = tech === 'fatiar' ? 14 : tech === 'estocar' ? 12 : 10;
+    const weakHit = hitPart(state.selectedPart, dmg, tech);
+    log('esfera → ' + state.selectedPart + ' via ' + tech + ' (' + dmg + ')', '');
+    flashAtk();
+    closeSphere();
+    if(weakHit && state.parts[state.selectedPart] && state.parts[state.selectedPart].alive){
+      startChain(state.selectedPart, tech);
+    }
+  }
+
+  function startChain(part, tech){
+    state.chain.active = true;
+    state.chain.count = 1;
+    state.chain.lastPart = part;
+    state.chain.lastTech = tech;
+    state.chain.window = state.chain.maxWindow;
+    showChainPrompt();
+  }
+
+  function showChainPrompt(){
+    const prompt = $('chain-prompt');
+    const ring = $('chain-ring');
+    const cnt = $('chain-count');
+    prompt.style.left = state.enemy.x + 'px';
+    prompt.classList.add('active');
+    cnt.textContent = 'CHAIN ×' + state.chain.count;
+    cnt.style.display = 'block';
+    cnt.style.left = (state.enemy.x + 30) + 'px';
+    const duration = Math.max(250, state.chain.maxWindow - (state.chain.count-1)*80);
+    ring.style.animation = 'none';
+    void ring.offsetWidth;
+    ring.style.animation = 'shrink ' + duration + 'ms linear forwards';
+    state.chain.timer = setTimeout(() => failChain(), duration);
+  }
+
+  function tryChain(){
+    if(!state.chain.active) return false;
+    clearTimeout(state.chain.timer);
+    state.chain.count++;
+    const bonus = state.chain.count;
+    const dmg = 10 + bonus * 3;
+    hitPart(state.chain.lastPart, dmg, state.chain.lastTech);
+    log('  ▸ CHAIN ×'+state.chain.count+' → +'+dmg+' dano', 'crit');
+    flashAtk();
+    if(state.chain.count >= 5){
+      log('  ✦ chain máximo!', 'crit');
+      endChain();
+      return true;
+    }
+    if(state.parts[state.chain.lastPart] && state.parts[state.chain.lastPart].alive){
+      showChainPrompt();
+    } else {
+      endChain();
+    }
+    return true;
+  }
+
+  function failChain(){
+    log('  ✗ chain quebrado', 'danger');
+    endChain();
+  }
+
+  function endChain(){
+    state.chain.active = false;
+    $('chain-prompt').classList.remove('active');
+    $('chain-count').style.display = 'none';
+  }
+
+  // enemy AI loop
+  let lastT = performance.now();
+  function tick(t){
+    const dt = (t - lastT) * state.timeScale;
+    lastT = t;
+    if(state.over){ requestAnimationFrame(tick); return; }
+    if(state.invuln > 0) state.invuln -= dt;
+    // enemy approach
+    if(!state.sphere || true){
+      const dist = state.enemy.x - state.player.x;
+      if(Math.abs(dist) > 50 && state.enemy.telegraph <= 0){
+        state.enemy.x -= Math.sign(dist) * 0.06 * dt;
+        $('enemy').style.left = state.enemy.x + 'px';
+      }
+      // enemy attack telegraph
+      state.enemy.atkCd -= dt;
+      if(state.enemy.atkCd <= 0 && Math.abs(dist) < 80 && state.enemy.telegraph <= 0){
+        state.enemy.telegraph = 800;
+        const tg = $('telegraph');
+        tg.style.display = 'block';
+        tg.style.left = (state.enemy.x - 25) + 'px';
+      }
+      if(state.enemy.telegraph > 0){
+        state.enemy.telegraph -= dt;
+        if(state.enemy.telegraph <= 0){
+          // strike
+          $('telegraph').style.display = 'none';
+          if(Math.abs(state.enemy.x - state.player.x) < 70 && state.invuln <= 0){
+            state.player.hp = Math.max(0, state.player.hp - 12);
+            $('player-hp').textContent = state.player.hp;
+            log('💥 inimigo te acertou (-12)', 'danger');
+            state.invuln = 400;
+            if(state.player.hp <= 0) endGame(false);
+          } else {
+            log('  inimigo errou', '');
+          }
+          state.enemy.atkCd = 1800;
+        }
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  function endGame(win){
+    state.over = true;
+    state.timeScale = 0;
+    endChain();
+    if(win){
+      state.ingredients.banked += state.ingredients.collected;
+      $('banner-text').textContent = 'Vitória! ' + state.ingredients.collected + ' ingredientes salvos.';
+    } else {
+      const lost = Math.floor(state.ingredients.collected * 0.5);
+      const kept = state.ingredients.collected - lost;
+      state.ingredients.banked = kept;
+      $('banner-text').textContent = 'Derrota. Perdeu ' + lost + ' ingredientes. ' + kept + ' guardados no saco de morte.';
+    }
+    $('ing-saved').textContent = state.ingredients.banked;
+    $('banner').classList.add('active');
+  }
+
+  window.reset = function(){
+    state.player.hp = 100;
+    state.player.x = 60;
+    state.enemy.x = 480;
+    state.enemy.attacking = false;
+    state.enemy.telegraph = 0;
+    state.enemy.atkCd = 1000;
+    state.over = false;
+    state.timeScale = 1;
+    state.ingredients.onGround = [];
+    state.ingredients.collected = 0;
+    Object.values(state.parts).forEach(p => { p.hp = p.max; p.alive = true; });
+    document.querySelectorAll('.ingredient').forEach(e => e.remove());
+    document.querySelectorAll('.part').forEach(e => e.classList.remove('dead'));
+    Object.keys(state.parts).forEach(k => $('hp-'+k).textContent = state.parts[k].max);
+    $('player').style.left = '60px';
+    $('enemy').style.left = '480px';
+    $('player-hp').textContent = 100;
+    $('ing-count').textContent = 0;
+    $('tempo-state').textContent = 'normal';
+    $('banner').classList.remove('active');
+    $('log').innerHTML = '';
+    log('nova batalha — Frango Profano apareceu', '');
+  };
+
+  // tech buttons
+  document.querySelectorAll('.tech-btn').forEach(b => {
+    b.onclick = () => executeTech(b.dataset.tech);
+  });
+
+  // keyboard
+  document.addEventListener('keydown', e => {
+    if(state.over) return;
+    const k = e.key.toLowerCase();
+    if(state.chain.active){
+      if(k === 'j' || k === ' ' || k === 'enter'){ e.preventDefault(); tryChain(); return; }
+    }
+    if(state.sphere){
+      if(k === 'escape') closeSphere();
+      return;
+    }
+    if(k === 'a' || k === 'arrowleft'){ e.preventDefault(); movePlayer(-1); }
+    else if(k === 'd' || k === 'arrowright'){ e.preventDefault(); movePlayer(1); }
+    else if(k === 'j'){ e.preventDefault(); quickAttack(); }
+    else if(k === 'e' || k === ' '){ e.preventDefault(); openSphere(); }
+  });
+
+  log('Frango Profano apareceu. Boa caça, Chef.', '');
+})();
+</script>
